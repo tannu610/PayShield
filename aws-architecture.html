@@ -1,0 +1,1085 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Secure Payment Processing — AWS Architecture</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Syne:wght@400;600;700;800&display=swap');
+
+  :root {
+    --bg: #0a0e1a;
+    --surface: #111827;
+    --surface2: #1a2235;
+    --border: rgba(255,255,255,0.07);
+    --text: #e2e8f0;
+    --muted: #64748b;
+    --blue: #3b82f6;
+    --blue-glow: rgba(59,130,246,0.35);
+    --green: #22c55e;
+    --green-glow: rgba(34,197,94,0.35);
+    --orange: #f97316;
+    --orange-glow: rgba(249,115,22,0.35);
+    --purple: #a855f7;
+    --purple-glow: rgba(168,85,247,0.35);
+    --aws-yellow: #FF9900;
+    --vpc-border: rgba(99,179,237,0.25);
+    --subnet-public: rgba(34,197,94,0.08);
+    --subnet-private: rgba(168,85,247,0.08);
+    --subnet-db: rgba(249,115,22,0.08);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Background grid */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(59,130,246,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(59,130,246,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .page-wrapper {
+    position: relative;
+    z-index: 1;
+    padding: 32px;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+
+  /* Header */
+  .header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 32px;
+    padding-bottom: 24px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .header-left {}
+  .header-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(255,153,0,0.12);
+    border: 1px solid rgba(255,153,0,0.3);
+    color: var(--aws-yellow);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    padding: 4px 10px;
+    border-radius: 4px;
+    margin-bottom: 10px;
+  }
+
+  .header-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 26px;
+    font-weight: 800;
+    color: #fff;
+    line-height: 1.1;
+  }
+
+  .header-subtitle {
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 6px;
+    letter-spacing: 0.05em;
+  }
+
+  .header-meta {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
+  }
+
+  .region-tag {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .region-tag span { color: var(--text); font-weight: 600; }
+
+  /* Flow Steps */
+  .flow-steps {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 28px;
+    flex-wrap: wrap;
+  }
+
+  .step-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .step-btn::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+
+  .step-btn:hover { border-color: rgba(255,255,255,0.15); color: var(--text); }
+
+  .step-btn.active { color: #fff; }
+
+  .step-btn[data-color="blue"]::before { background: var(--blue-glow); }
+  .step-btn[data-color="green"]::before { background: var(--green-glow); }
+  .step-btn[data-color="orange"]::before { background: var(--orange-glow); }
+  .step-btn[data-color="purple"]::before { background: var(--purple-glow); }
+
+  .step-btn.active::before { opacity: 1; }
+  .step-btn[data-color="blue"].active { border-color: var(--blue); }
+  .step-btn[data-color="green"].active { border-color: var(--green); }
+  .step-btn[data-color="orange"].active { border-color: var(--orange); }
+  .step-btn[data-color="purple"].active { border-color: var(--purple); }
+
+  .step-num {
+    width: 20px; height: 20px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; font-weight: 700;
+    flex-shrink: 0;
+  }
+
+  .step-btn[data-color="blue"] .step-num { background: var(--blue); color: #fff; }
+  .step-btn[data-color="green"] .step-num { background: var(--green); color: #fff; }
+  .step-btn[data-color="orange"] .step-num { background: var(--orange); color: #fff; }
+  .step-btn[data-color="purple"] .step-num { background: var(--purple); color: #fff; }
+
+  .step-label { position: relative; z-index: 1; }
+  .step-protocol { font-size: 9px; opacity: 0.6; position: relative; z-index: 1; }
+
+  /* Diagram canvas */
+  .diagram-wrapper {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 28px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* VPC Container */
+  .vpc-container {
+    border: 1.5px dashed var(--vpc-border);
+    border-radius: 12px;
+    padding: 20px;
+    position: relative;
+    background: rgba(99,179,237,0.02);
+  }
+
+  .zone-label {
+    position: absolute;
+    top: -11px;
+    left: 16px;
+    background: var(--surface);
+    padding: 2px 10px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    border: 1px solid var(--vpc-border);
+    color: #63b3ed;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  /* Rows */
+  .arch-row {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    margin-bottom: 16px;
+    position: relative;
+  }
+
+  .arch-row:last-child { margin-bottom: 0; }
+
+  /* External zone */
+  .external-zone {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+    padding: 0 10px;
+  }
+
+  /* Subnet rows */
+  .subnet-row {
+    display: grid;
+    grid-template-columns: 120px 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 10px;
+    align-items: center;
+  }
+
+  .subnet-label-col {
+    font-size: 9px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    text-align: right;
+    padding-right: 8px;
+  }
+
+  /* AZ containers */
+  .az-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+
+  .az-box {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+
+  .az-header {
+    background: var(--surface2);
+    padding: 6px 12px;
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .az-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: #22c55e;
+    box-shadow: 0 0 6px #22c55e;
+  }
+
+  .az-body {
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  /* Subnet cells */
+  .subnet-cell {
+    border-radius: 7px;
+    padding: 8px 10px;
+    border: 1px solid transparent;
+    position: relative;
+  }
+
+  .subnet-cell.public { background: var(--subnet-public); border-color: rgba(34,197,94,0.15); }
+  .subnet-cell.private { background: var(--subnet-private); border-color: rgba(168,85,247,0.15); }
+  .subnet-cell.db { background: var(--subnet-db); border-color: rgba(249,115,22,0.15); }
+
+  .subnet-type-tag {
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 5px;
+  }
+
+  .subnet-cell.public .subnet-type-tag { color: var(--green); }
+  .subnet-cell.private .subnet-type-tag { color: var(--purple); }
+  .subnet-cell.db .subnet-type-tag { color: var(--orange); }
+
+  .subnet-cidr {
+    font-size: 9px;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+
+  /* Component nodes */
+  .node {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    transition: all 0.25s ease;
+    cursor: default;
+    position: relative;
+  }
+
+  .node.highlighted {
+    border-color: currentColor;
+    box-shadow: 0 0 16px currentColor;
+    z-index: 2;
+  }
+
+  .node.dimmed { opacity: 0.2; }
+
+  .node-icon {
+    font-size: 18px;
+    flex-shrink: 0;
+    width: 24px;
+    text-align: center;
+  }
+
+  .node-info {}
+  .node-name {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text);
+    white-space: nowrap;
+  }
+  .node-detail {
+    font-size: 8px;
+    color: var(--muted);
+    margin-top: 1px;
+  }
+
+  .sg-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 1px 5px;
+    font-size: 7px;
+    color: var(--muted);
+    margin-top: 3px;
+  }
+
+  /* Arrow connectors */
+  .connectors-svg {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 5;
+    overflow: visible;
+  }
+
+  /* External top row */
+  .top-bar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    margin-bottom: 20px;
+    position: relative;
+  }
+
+  .top-nodes {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .flow-arrow-h {
+    display: flex;
+    align-items: center;
+    padding: 0 4px;
+    color: var(--muted);
+    font-size: 14px;
+    position: relative;
+  }
+
+  .flow-arrow-h.highlighted-blue { color: var(--blue); filter: drop-shadow(0 0 6px var(--blue)); }
+  .flow-arrow-h.highlighted-green { color: var(--green); filter: drop-shadow(0 0 6px var(--green)); }
+  .flow-arrow-h.highlighted-orange { color: var(--orange); filter: drop-shadow(0 0 6px var(--orange)); }
+  .flow-arrow-h.highlighted-purple { color: var(--purple); filter: drop-shadow(0 0 6px var(--purple)); }
+
+  /* Vertical connector */
+  .v-connector {
+    width: 2px;
+    background: var(--border);
+    border-radius: 2px;
+    margin: 0 auto;
+    position: relative;
+    transition: all 0.3s;
+  }
+
+  /* Legend */
+  .legend {
+    display: flex;
+    gap: 20px;
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+    color: var(--muted);
+  }
+
+  .legend-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* Security groups panel */
+  .sg-panel {
+    margin-top: 20px;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+  }
+
+  .sg-card {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+  }
+
+  .sg-card-title {
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .sg-card-title::before {
+    content: '🔒';
+    font-size: 12px;
+  }
+
+  .sg-rule {
+    font-size: 9px;
+    color: var(--muted);
+    padding: 3px 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .sg-rule:last-child { border-bottom: none; }
+
+  /* CloudWatch badge */
+  .cw-badge {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    background: rgba(255,153,0,0.08);
+    border: 1px solid rgba(255,153,0,0.2);
+    border-radius: 8px;
+    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 10px;
+    color: var(--aws-yellow);
+  }
+
+  /* Full layout */
+  .main-diagram {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .alb-row {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    margin-bottom: 8px;
+  }
+
+  .vertical-line {
+    width: 1px;
+    height: 24px;
+    background: linear-gradient(to bottom, rgba(255,255,255,0.1), rgba(255,255,255,0.05));
+    margin: 0 auto;
+    position: relative;
+  }
+
+  .vertical-line::after {
+    content: '▼';
+    font-size: 8px;
+    color: var(--muted);
+    position: absolute;
+    bottom: -2px;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+
+  .inline-node {
+    display: inline-flex;
+  }
+
+  .section-divider {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 8px 0;
+    font-size: 9px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+
+  .section-divider::before,
+  .section-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  /* Bastion box */
+  .bastion-row {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 10px;
+  }
+
+  .bastion-node {
+    position: relative;
+  }
+
+  .bastion-access-tag {
+    position: absolute;
+    top: -18px;
+    right: 0;
+    font-size: 8px;
+    color: #f59e0b;
+    white-space: nowrap;
+  }
+
+  /* Animated pulse on active nodes */
+  @keyframes pulse-ring {
+    0% { box-shadow: 0 0 0 0 currentColor; }
+    70% { box-shadow: 0 0 0 8px transparent; }
+    100% { box-shadow: 0 0 0 0 transparent; }
+  }
+
+  .node.highlighted { animation: pulse-ring 1.5s ease infinite; }
+
+  /* Arrow line segments */
+  .flow-line {
+    height: 2px;
+    width: 30px;
+    background: var(--border);
+    position: relative;
+    transition: all 0.3s;
+  }
+
+  .flow-line::after {
+    content: '';
+    position: absolute;
+    right: -4px;
+    top: 50%;
+    transform: translateY(-50%);
+    border-left: 6px solid var(--border);
+    border-top: 4px solid transparent;
+    border-bottom: 4px solid transparent;
+    transition: all 0.3s;
+  }
+
+  .hint-text {
+    text-align: center;
+    font-size: 10px;
+    color: var(--muted);
+    margin-bottom: 16px;
+    letter-spacing: 0.05em;
+  }
+
+  .status-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: var(--surface2);
+    border-radius: 8px;
+    font-size: 10px;
+    color: var(--muted);
+    margin-bottom: 16px;
+  }
+
+  .status-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 8px var(--green);
+    animation: blink 2s ease infinite;
+  }
+
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  .info-panel {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 18px;
+    margin-top: 20px;
+    font-size: 11px;
+    color: var(--muted);
+    min-height: 50px;
+    transition: all 0.3s;
+  }
+
+  .info-panel strong { color: var(--text); }
+
+  /* Color classes for nodes */
+  .node.color-blue { color: var(--blue); }
+  .node.color-green { color: var(--green); }
+  .node.color-orange { color: var(--orange); }
+  .node.color-purple { color: var(--purple); }
+
+  /* Responsive */
+  @media (max-width: 900px) {
+    .sg-panel { grid-template-columns: 1fr 1fr; }
+    .header { flex-direction: column; gap: 12px; }
+    .header-meta { align-items: flex-start; }
+    .az-container { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div class="page-wrapper">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-left">
+      <div class="header-badge">
+        <span>☁</span> AWS Cloud Architecture
+      </div>
+      <div class="header-title">Secure Payment Processing System</div>
+      <div class="header-subtitle">tannu-vpc · 10.0.0.0/16 · Multi-AZ · Production-Grade</div>
+    </div>
+    <div class="header-meta">
+      <div class="region-tag">Region: <span>eu-north-1 (Stockholm)</span></div>
+      <div class="region-tag">VPC CIDR: <span>10.0.0.0/16</span></div>
+      <div class="status-bar" style="margin:0">
+        <div class="status-dot"></div>
+        All systems operational
+      </div>
+    </div>
+  </div>
+
+  <!-- Flow steps -->
+  <div style="margin-bottom:10px; font-size:10px; color:var(--muted); letter-spacing:0.08em; text-transform:uppercase;">
+    ↗ Click a flow step to highlight the request path
+  </div>
+  <div class="flow-steps">
+    <button class="step-btn" data-color="blue" data-step="1" onclick="activateStep(1)">
+      <div class="step-num">1</div>
+      <div>
+        <div class="step-label">User Request</div>
+        <div class="step-protocol">HTTPS · User → IGW → ALB</div>
+      </div>
+    </button>
+    <button class="step-btn" data-color="green" data-step="2" onclick="activateStep(2)">
+      <div class="step-num">2</div>
+      <div>
+        <div class="step-label">Load Balancing</div>
+        <div class="step-protocol">HTTP · ALB → EC2</div>
+      </div>
+    </button>
+    <button class="step-btn" data-color="orange" data-step="3" onclick="activateStep(3)">
+      <div class="step-num">3</div>
+      <div>
+        <div class="step-label">Database Access</div>
+        <div class="step-protocol">TCP · EC2 → RDS</div>
+      </div>
+    </button>
+    <button class="step-btn" data-color="purple" data-step="4" onclick="activateStep(4)">
+      <div class="step-num">4</div>
+      <div>
+        <div class="step-label">Response Flow</div>
+        <div class="step-protocol">HTTPS · RDS → EC2 → ALB → User</div>
+      </div>
+    </button>
+    <button class="step-btn" data-color="" data-step="0" onclick="activateStep(0)" style="opacity:0.6">
+      <div class="step-label" style="padding: 0 4px">✕ Clear</div>
+    </button>
+  </div>
+
+  <!-- Info panel -->
+  <div class="info-panel" id="infoPanel">
+    Select a flow step above to trace the request path through the architecture. Hover over any component to see its details.
+  </div>
+
+  <!-- Main diagram -->
+  <div class="diagram-wrapper" style="margin-top:20px;">
+    <div class="cw-badge">
+      <span>📊</span>
+      <div>
+        <div style="font-weight:700; font-size:10px">CloudWatch</div>
+        <div style="font-size:8px; opacity:0.7">Logs · Metrics · Alarms</div>
+      </div>
+    </div>
+
+    <!-- External layer -->
+    <div style="display:flex; align-items:center; gap:12px; margin-bottom:20px; padding: 0 10px">
+      <div class="node" id="node-user" style="color:var(--blue)">
+        <div class="node-icon">👤</div>
+        <div class="node-info">
+          <div class="node-name">Users / Clients</div>
+          <div class="node-detail">Web · Mobile · HTTPS</div>
+        </div>
+      </div>
+      <div class="flow-arrow-h" id="arrow-user-igw">──▶</div>
+      <div class="node" id="node-igw" style="color:#63b3ed">
+        <div class="node-icon">🌐</div>
+        <div class="node-info">
+          <div class="node-name">Internet Gateway</div>
+          <div class="node-detail">igw-tannu</div>
+        </div>
+      </div>
+      <div class="flow-arrow-h" id="arrow-igw-alb">──▶</div>
+
+      <!-- ALB (spans AZs) -->
+      <div class="node" id="node-alb" style="flex:1; color:#22d3ee">
+        <div class="node-icon">⚖️</div>
+        <div class="node-info">
+          <div class="node-name">Application Load Balancer</div>
+          <div class="node-detail">HTTPS :443 · alb-sg · Public Subnets AZ1 + AZ2</div>
+          <div class="sg-badge">🔒 alb-sg: HTTPS from 0.0.0.0/0</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- VPC -->
+    <div class="vpc-container">
+      <div class="zone-label">
+        <span style="font-size:12px">🏗</span>
+        tannu-vpc — 10.0.0.0/16
+      </div>
+
+      <!-- Bastion (public, in VPC) -->
+      <div style="display:flex; justify-content:flex-end; margin-bottom:12px; padding-right: 4px">
+        <div style="position:relative">
+          <div style="position:absolute; top:-16px; right:0; font-size:8px; color:#f59e0b; white-space:nowrap">SSH from My IP only</div>
+          <div class="node" id="node-bastion" style="color:#f59e0b">
+            <div class="node-icon">🖥</div>
+            <div class="node-info">
+              <div class="node-name">Bastion Host</div>
+              <div class="node-detail">EC2 · Public Subnet · SSH :22</div>
+              <div class="sg-badge">🔒 bastion-sg</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- AZ grid -->
+      <div class="az-container">
+
+        <!-- AZ-1 -->
+        <div class="az-box">
+          <div class="az-header">
+            <div class="az-dot"></div>
+            Availability Zone 1 — eu-north-1a
+          </div>
+          <div class="az-body">
+            <div class="subnet-cell public">
+              <div class="subnet-type-tag">Public Subnet</div>
+              <div class="subnet-cidr">10.0.1.0/24</div>
+              <div class="node" id="node-alb-az1" style="color:#22d3ee">
+                <div class="node-icon">⚖️</div>
+                <div class="node-info">
+                  <div class="node-name">ALB Node</div>
+                  <div class="node-detail">10.0.1.x</div>
+                </div>
+              </div>
+            </div>
+            <div class="subnet-cell private">
+              <div class="subnet-type-tag">Private App Subnet</div>
+              <div class="subnet-cidr">10.0.3.0/24</div>
+              <div class="node" id="node-ec2-az1" style="color:#a855f7">
+                <div class="node-icon">🖥</div>
+                <div class="node-info">
+                  <div class="node-name">EC2 Backend</div>
+                  <div class="node-detail">Auto Scaling · HTTP :80 from ALB · SSH :22 from Bastion</div>
+                  <div class="sg-badge">🔒 ec2-sg</div>
+                </div>
+              </div>
+            </div>
+            <div class="subnet-cell db">
+              <div class="subnet-type-tag">Private DB Subnet</div>
+              <div class="subnet-cidr">10.0.5.0/24</div>
+              <div class="node" id="node-rds-az1" style="color:#f97316">
+                <div class="node-icon">🗄</div>
+                <div class="node-info">
+                  <div class="node-name">RDS Primary</div>
+                  <div class="node-detail">MySQL/PostgreSQL · Multi-AZ</div>
+                  <div class="sg-badge">🔒 db-sg</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- AZ-2 -->
+        <div class="az-box">
+          <div class="az-header">
+            <div class="az-dot"></div>
+            Availability Zone 2 — eu-north-1b
+          </div>
+          <div class="az-body">
+            <div class="subnet-cell public">
+              <div class="subnet-type-tag">Public Subnet</div>
+              <div class="subnet-cidr">10.0.2.0/24</div>
+              <div class="node" id="node-alb-az2" style="color:#22d3ee">
+                <div class="node-icon">⚖️</div>
+                <div class="node-info">
+                  <div class="node-name">ALB Node</div>
+                  <div class="node-detail">10.0.2.x</div>
+                </div>
+              </div>
+            </div>
+            <div class="subnet-cell private">
+              <div class="subnet-type-tag">Private App Subnet</div>
+              <div class="subnet-cidr">10.0.4.0/24</div>
+              <div class="node" id="node-ec2-az2" style="color:#a855f7">
+                <div class="node-icon">🖥</div>
+                <div class="node-info">
+                  <div class="node-name">EC2 Backend</div>
+                  <div class="node-detail">Auto Scaling · HTTP :80 from ALB · SSH :22 from Bastion</div>
+                  <div class="sg-badge">🔒 ec2-sg</div>
+                </div>
+              </div>
+            </div>
+            <div class="subnet-cell db">
+              <div class="subnet-type-tag">Private DB Subnet</div>
+              <div class="subnet-cidr">10.0.6.0/24</div>
+              <div class="node" id="node-rds-az2" style="color:#f97316">
+                <div class="node-icon">🗄</div>
+                <div class="node-info">
+                  <div class="node-name">RDS Standby</div>
+                  <div class="node-detail">MySQL/PostgreSQL · Multi-AZ Replica</div>
+                  <div class="sg-badge">🔒 db-sg</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /az-container -->
+    </div><!-- /vpc-container -->
+
+    <!-- Legend -->
+    <div class="legend">
+      <div class="legend-item">
+        <div class="legend-dot" style="background:var(--blue); box-shadow:0 0 6px var(--blue)"></div>
+        Incoming Traffic (HTTPS)
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background:var(--green); box-shadow:0 0 6px var(--green)"></div>
+        Internal App Traffic (HTTP)
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background:var(--orange); box-shadow:0 0 6px var(--orange)"></div>
+        Database Traffic (TCP)
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background:var(--purple); box-shadow:0 0 6px var(--purple)"></div>
+        Response Flow (HTTPS)
+      </div>
+      <div class="legend-item" style="margin-left:auto">
+        <div class="legend-dot" style="background:var(--green)"></div> Public Subnet
+        &nbsp;
+        <div class="legend-dot" style="background:var(--purple)"></div> Private Subnet
+        &nbsp;
+        <div class="legend-dot" style="background:var(--orange)"></div> DB Subnet
+      </div>
+    </div>
+
+  </div><!-- /diagram-wrapper -->
+
+  <!-- Security Groups -->
+  <div style="margin-top:28px">
+    <div style="font-family:'Syne',sans-serif; font-size:13px; font-weight:700; color:var(--text); margin-bottom:12px; letter-spacing:0.05em;">
+      🔒 Security Group Rules
+    </div>
+    <div class="sg-panel">
+      <div class="sg-card">
+        <div class="sg-card-title">alb-sg</div>
+        <div class="sg-rule">✅ Inbound: HTTPS :443 from 0.0.0.0/0</div>
+        <div class="sg-rule">✅ Inbound: HTTP :80 from 0.0.0.0/0 (redirect)</div>
+        <div class="sg-rule">→ Outbound: HTTP :80 to ec2-sg</div>
+      </div>
+      <div class="sg-card">
+        <div class="sg-card-title">ec2-sg</div>
+        <div class="sg-rule">✅ Inbound: HTTP :80 from alb-sg only</div>
+        <div class="sg-rule">✅ Inbound: SSH :22 from bastion-sg only</div>
+        <div class="sg-rule">→ Outbound: DB port to db-sg</div>
+      </div>
+      <div class="sg-card">
+        <div class="sg-card-title">db-sg</div>
+        <div class="sg-rule">✅ Inbound: :3306/:5432 from ec2-sg only</div>
+        <div class="sg-rule">🚫 No public internet access</div>
+        <div class="sg-rule">→ Isolated in private DB subnet</div>
+      </div>
+      <div class="sg-card">
+        <div class="sg-card-title">bastion-sg</div>
+        <div class="sg-rule">✅ Inbound: SSH :22 from My IP only</div>
+        <div class="sg-rule">🚫 No other inbound allowed</div>
+        <div class="sg-rule">→ Outbound: SSH :22 to ec2-sg</div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /page-wrapper -->
+
+<script>
+  let activeStep = 0;
+
+  const stepConfig = {
+    1: {
+      color: 'blue',
+      colorVal: '#3b82f6',
+      nodes: ['node-user', 'node-igw', 'node-alb', 'node-alb-az1', 'node-alb-az2'],
+      arrows: ['arrow-user-igw', 'arrow-igw-alb'],
+      info: '<strong>Step 1 — User Request (HTTPS)</strong><br>A web or mobile client sends an HTTPS request to the domain. The Internet Gateway routes traffic into the VPC, where the Application Load Balancer (alb-sg) accepts connections on port 443. Only HTTPS from the public internet is allowed; all other ports are denied.'
+    },
+    2: {
+      color: 'green',
+      colorVal: '#22c55e',
+      nodes: ['node-alb', 'node-alb-az1', 'node-alb-az2', 'node-ec2-az1', 'node-ec2-az2'],
+      arrows: [],
+      info: '<strong>Step 2 — Load Balancing (HTTP)</strong><br>The ALB forwards the request over HTTP (port 80) to one of the EC2 backend instances in the private app subnets (10.0.3.0/24 or 10.0.4.0/24). Traffic is distributed across both Availability Zones for high availability. The ec2-sg only accepts traffic from alb-sg — no direct internet access.'
+    },
+    3: {
+      color: 'orange',
+      colorVal: '#f97316',
+      nodes: ['node-ec2-az1', 'node-ec2-az2', 'node-rds-az1', 'node-rds-az2'],
+      arrows: [],
+      info: '<strong>Step 3 — Database Access (TCP)</strong><br>The EC2 application server queries the RDS instance in the private DB subnet. The db-sg allows DB port traffic (3306/5432) exclusively from ec2-sg. RDS is configured in Multi-AZ mode: the primary in AZ-1 synchronously replicates to the standby in AZ-2 for automatic failover.'
+    },
+    4: {
+      color: 'purple',
+      colorVal: '#a855f7',
+      nodes: ['node-rds-az1', 'node-rds-az2', 'node-ec2-az1', 'node-ec2-az2', 'node-alb', 'node-alb-az1', 'node-alb-az2', 'node-igw', 'node-user'],
+      arrows: ['arrow-user-igw', 'arrow-igw-alb'],
+      info: '<strong>Step 4 — Response Flow (HTTPS)</strong><br>RDS returns query results to the EC2 instance, which sends the HTTP response back to the ALB. The ALB encrypts the response and returns it over HTTPS to the client through the Internet Gateway. CloudWatch captures logs, metrics, and alarms throughout the entire request lifecycle.'
+    }
+  };
+
+  const allNodes = ['node-user', 'node-igw', 'node-alb', 'node-alb-az1', 'node-alb-az2',
+    'node-ec2-az1', 'node-ec2-az2', 'node-rds-az1', 'node-rds-az2', 'node-bastion'];
+  const allArrows = ['arrow-user-igw', 'arrow-igw-alb'];
+
+  function activateStep(step) {
+    // Reset buttons
+    document.querySelectorAll('.step-btn').forEach(b => b.classList.remove('active'));
+
+    if (step === 0 || step === activeStep) {
+      activeStep = 0;
+      resetAll();
+      document.getElementById('infoPanel').innerHTML = 'Select a flow step above to trace the request path through the architecture.';
+      return;
+    }
+
+    activeStep = step;
+    const btn = document.querySelector(`.step-btn[data-step="${step}"]`);
+    if (btn) btn.classList.add('active');
+
+    const cfg = stepConfig[step];
+
+    // Apply node states
+    allNodes.forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      if (cfg.nodes.includes(id)) {
+        el.classList.remove('dimmed');
+        el.classList.add('highlighted');
+        el.style.color = cfg.colorVal;
+      } else {
+        el.classList.remove('highlighted');
+        el.classList.add('dimmed');
+        el.style.color = '';
+      }
+    });
+
+    // Apply arrow states
+    allArrows.forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.className = 'flow-arrow-h';
+      if (cfg.arrows.includes(id)) {
+        el.classList.add(`highlighted-${cfg.color}`);
+      }
+    });
+
+    document.getElementById('infoPanel').innerHTML = cfg.info;
+  }
+
+  function resetAll() {
+    allNodes.forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.classList.remove('highlighted', 'dimmed');
+      el.style.color = '';
+    });
+    allArrows.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.className = 'flow-arrow-h';
+    });
+  }
+
+  // Hover tooltips
+  allNodes.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('mouseenter', () => {
+      if (activeStep === 0) {
+        el.style.borderColor = 'rgba(255,255,255,0.2)';
+      }
+    });
+    el.addEventListener('mouseleave', () => {
+      if (activeStep === 0) {
+        el.style.borderColor = '';
+      }
+    });
+  });
+</script>
+
+</body>
+</html>
